@@ -27,6 +27,58 @@
 
 (require 'org-ref)
 
+(defun html-to-bibtex-read (url)
+  "Read URL content and return title, author, and year fields."
+  (interactive)
+  (let (fields)
+    (with-current-buffer
+        (url-retrieve-synchronously url t t)
+      (goto-char (point-min))
+      (when (re-search-forward "<meta property=\"[[:ascii:]]*?:?published_time\" content=\"\\([0-9][0-9][0-9][0-9]\\)-\\(.+\\)\"\s?/?>" nil t)
+        (push (cons :year (match-string 1)) fields))
+      (when (not (assoc :year fields))
+        (goto-char (point-min))
+        (when (re-search-forward "<[a-z].+ class=\\(.?+date.[^>]*\\)>\\([[:ascii:]]*?\\)</[a-z].+>" nil t)
+          (let ((string (match-string 2)))
+            (when (string-match "\\([0-9]\\{4\\}\\)" string)
+              (push (cons :year (match-string 1 string)) fields)))))
+      (goto-char (point-min))
+      (when (re-search-forward "<meta name=\"[[:ascii:]]*?:?author\" content=\"\\(.+\\)\"\s?/?>" nil t)
+        (push (cons :author (match-string 1)) fields))
+      (goto-char (point-min))
+      (when (re-search-forward "<title>\\([[:ascii:][:nonascii:]]*?\\|.+\\)</title>" nil t)
+        (push (cons :title
+                    (s-trim (decode-coding-string (match-string 1) 'utf-8)))
+              fields)))
+    fields))
+
+(defun html-to-bibtex (bibfile)
+  "Convert URL to bibtex entry."
+  (interactive (if (-contains? (org-ref-find-bibliography) (buffer-file-name))
+                   (list (buffer-file-name))
+                 (list (completing-read "Bibtex file: " (org-ref-find-bibliography)))))
+  (let* ((url (if (s-match "^http" (current-kill 0))
+                  (format "%s" (current-kill 0))
+                (read-from-minibuffer "URL: ")))
+         (alist (html-to-bibtex-read url))
+         (title (assoc-default :title alist))
+         (author (assoc-default :author alist))
+         (year (assoc-default :year alist))
+         (urldate (format-time-string "%d %B %Y")))
+    (with-current-buffer
+        (find-file-noselect bibfile)
+      (goto-char (point-max))
+      (if (looking-at "^") (insert "\n") (insert "\n\n"))
+      (insert (format "@misc{key,
+  title =	 {%s},
+  author =	 {%s},
+  howpublished = {%s},
+  year =	 {%s},
+  note =	 {Online; accessed %s}
+}" title author url year urldate))
+      (bibtex-beginning-of-entry)
+      (org-ref-clean-bibtex-entry))))
+
 (defun org-ref-get-bibtex-entry-md (key)
   "Return a md string for the bibliography entry corresponding to KEY."
   ;; We create an anchor to the key that we can jump to, and provide a jump back
@@ -53,6 +105,7 @@ of format strings used."
                                 (cdr (assoc nil formats))))
         (setq ref (s-format format-string 'bibtex-completion-apa-get-value entry))
         (replace-regexp-in-string "\\([.?!]\\)\\." "\\1" ref)))))
+
 
 (defmacro org-ref-make-format-function (type)
   "Macro to make a format function for a link of TYPE."
@@ -103,82 +156,64 @@ Supported backends: 'html, 'latex, 'ascii, 'org, 'md, 'pandoc" type type)
                     ;; this is an html link that has an anchor to jump back to,
                     ;; and links to the entry in the bibliography. Also contains
                     ;; a tooltip.
-                    (format "<sup id=\"%s\"><a href=\"#%s\" title=\"%s\">%s</a></sup>"
-                            ;; this makes an anchor to return to
-			                      (md5 key)
-			                      key
-                            ;; awful way to get a simple tooltip... I just need
-                            ;; a simple formatted string, but the default has
-                            ;; too much html stuff in it, and this needs to be
-                            ;; cleaned of quotes and stuff,
-                            (let ((org-ref-bibliography-files (org-ref-find-bibliography))
-				                          (file) (entry) (bibtex-entry) (entry-type) (format)
-				                          (org-ref-bibliography-entry-format
-				                           '(("article" . "%a, %t, %j, v(%n), %p (%y).")
-				                             ("book" . "%a, %t, %u (%y).")
-				                             ("techreport" . "%a, %t, %i, %u (%y).")
-				                             ("proceedings" . "%e, %t in %S, %u (%y).")
-				                             ("inproceedings" . "%a, %t, %p, in %b, edited by %e, %u (%y)"))))
-			                        (setq file (catch 'result
-					                                 (cl-loop for file in org-ref-bibliography-files do
-						                                        (if (org-ref-key-in-file-p key (file-truename file))
-							                                          (throw 'result file)
-						                                          (message "%s not found in %s"
-							                                                 key (file-truename file))))))
+                    (let* ((org-ref-bibliography-files (org-ref-find-bibliography))
+                           (reftex-cite-punctuation '(", " " \\& " " et al."))
+                           (file (catch 'result
+                                   (cl-loop for file in org-ref-bibliography-files do
+                                            (if (org-ref-key-in-file-p key (file-truename file))
+                                                (throw 'result file)
+                                              (message "%s not found in %s"
+                                                       key (file-truename file))))))
+                           (title (let ((fmt '(("article" . "%a, %t, %j, v(%n), %p (%y).")
+                                               ("book" . "%a, %t, %u (%y).")
+                                               ("techreport" . "%a, %t, %i, %u (%y).")
+                                               ("proceedings" . "%e, %t in %S, %u (%y).")
+                                               ("inproceedings" . "%a, %t, %p, in %b, edited by %e, %u (%y)"))))
+                                    (with-temp-buffer
+                                      (insert-file-contents file)
+                                      (bibtex-set-dialect (parsebib-find-bibtex-dialect) t)
+                                      (bibtex-search-entry key nil 0)
+                                      (setq bibtex-entry (bibtex-parse-entry))
+                                      ;; downcase field names so they work in the format-citation code
+                                      (dolist (cons-cell bibtex-entry)
+                                        (setf (car cons-cell) (downcase (car cons-cell))))
+                                      (setq entry-type (downcase (cdr (assoc "=type=" bibtex-entry))))
 
-			                        (with-temp-buffer
-				                        (insert-file-contents file)
-				                        (bibtex-set-dialect (parsebib-find-bibtex-dialect) t)
-				                        (bibtex-search-entry key nil 0)
-				                        (setq bibtex-entry (bibtex-parse-entry))
-                                ;; downcase field names so they work in the format-citation code
-				                        (dolist (cons-cell bibtex-entry)
-				                          (setf (car cons-cell) (downcase (car cons-cell))))
-				                        (setq entry-type (downcase (cdr (assoc "=type=" bibtex-entry))))
+                                      (setq format (cdr (assoc entry-type fmt)))
+                                      (if format
+                                          (setq entry  (org-ref-reftex-format-citation bibtex-entry format))
+                                        ;; if no format, we use the bibtex entry itself as a fallback
+                                        (save-restriction
+                                          (bibtex-narrow-to-entry)
+                                          (setq entry (buffer-string))))
+                                      (replace-regexp-in-string "\"" "" (htmlize-escape-or-link entry)))))
+                           (author-year (let ((fmt '(("article" . "(%2a, %y)")
+                                                     ("book" . "(%2a, %y)")
+                                                     ("techreport" . "(%2a, %y)")
+                                                     ("proceedings" . "(%2a, %y)")
+                                                     ("inproceedings" . "(%2a, %y)"))))
+                                          (with-temp-buffer
+                                            (insert-file-contents file)
+                                            (bibtex-set-dialect (parsebib-find-bibtex-dialect) t)
+                                            (bibtex-search-entry key nil 0)
+                                            (setq bibtex-entry (bibtex-parse-entry))
+                                            ;; downcase field names so they work in the format-citation code
+                                            (dolist (cons-cell bibtex-entry)
+                                              (setf (car cons-cell) (downcase (car cons-cell))))
+                                            (setq entry-type (downcase (cdr (assoc "=type=" bibtex-entry))))
 
-				                        (setq format (cdr (assoc entry-type org-ref-bibliography-entry-format)))
-				                        (if format
-				                            (setq entry  (org-ref-reftex-format-citation bibtex-entry format))
-				                          ;; if no format, we use the bibtex entry itself as a fallback
-				                          (save-restriction
-				                            (bibtex-narrow-to-entry)
-				                            (setq entry (buffer-string)))))
-			                        (replace-regexp-in-string "\"" "" (htmlize-escape-or-link entry)))
-                            (let ((org-ref-bibliography-files (org-ref-find-bibliography))
-				                          (file) (entry) (bibtex-entry) (entry-type) (format)
-				                          (org-ref-bibliography-entry-format
-				                           '(("article" . "(%2a, %y)")
-				                             ("book" . "(%2a, %y)")
-				                             ("techreport" . "(%2a, %y)")
-				                             ("proceedings" . "(%2a, %y)")
-				                             ("inproceedings" . "(%2a, %y)")
-                                     ("misc" . "(%2a, %y)"))))
-			                        (setq file (catch 'result
-					                                 (cl-loop for file in org-ref-bibliography-files do
-						                                        (if (org-ref-key-in-file-p key (file-truename file))
-							                                          (throw 'result file)
-						                                          (message "%s not found in %s"
-							                                                 key (file-truename file))))))
-
-			                        (with-temp-buffer
-				                        (insert-file-contents file)
-				                        (bibtex-set-dialect (parsebib-find-bibtex-dialect) t)
-				                        (bibtex-search-entry key nil 0)
-				                        (setq bibtex-entry (bibtex-parse-entry))
-                                ;; downcase field names so they work in the format-citation code
-				                        (dolist (cons-cell bibtex-entry)
-				                          (setf (car cons-cell) (downcase (car cons-cell))))
-				                        (setq entry-type (downcase (cdr (assoc "=type=" bibtex-entry))))
-
-				                        (setq format (cdr (assoc entry-type org-ref-bibliography-entry-format)))
-				                        (if format
-				                            (setq entry  (org-ref-reftex-format-citation bibtex-entry format))
-				                          ;; if no format, we use the bibtex entry itself as a fallback
-				                          (save-restriction
-				                            (bibtex-narrow-to-entry)
-				                            (setq entry (buffer-string)))))
-                              entry)))
-                  (s-split "," keyword) "<sup>,</sup>"))
+                                            (setq format (cdr (assoc entry-type fmt)))
+                                            (if format
+                                                (setq entry  (org-ref-reftex-format-citation bibtex-entry format))
+                                              ;; if no format, we use the bibtex entry itself as a fallback
+                                              (save-restriction
+                                                (bibtex-narrow-to-entry)
+                                                (setq entry (buffer-string))))
+                                            entry))))
+                      (format "<a id=\"%s\" href=\"#%s\" title=\"%s\">%s</a>"
+                              (md5 key) key title author-year)
+                      ))
+                  (s-split "," keyword) "<a>, </a>"))
       ;; for  pandoc we generate pandoc citations
       ((eq format 'pandoc)
        (cond
