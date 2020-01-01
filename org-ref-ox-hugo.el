@@ -84,7 +84,7 @@
   ;; We create an anchor to the key that we can jump to, and provide a jump back
   ;; link with the md5 of the key.
   (let ((org-ref-formatted-citation-backend "md"))
-    (format "<a id=\"%s\"></a>%s [↩](#%s)"
+    (format "<a id=\"%s\" target=\"_blank\">%s</a> [↩](#%s)"
             key
             (org-ref-format-entry key)
             (md5 key))))
@@ -164,34 +164,7 @@ Supported backends: 'html, 'latex, 'ascii, 'org, 'md, 'pandoc" type type)
                                                 (throw 'result file)
                                               (message "%s not found in %s"
                                                        key (file-truename file))))))
-                           (title (let ((fmt '(("article" . "%a, %t, %j, v(%n), %p (%y).")
-                                               ("book" . "%a, %t, %u (%y).")
-                                               ("techreport" . "%a, %t, %i, %u (%y).")
-                                               ("proceedings" . "%e, %t in %S, %u (%y).")
-                                               ("inproceedings" . "%a, %t, %p, in %b, edited by %e, %u (%y)"))))
-                                    (with-temp-buffer
-                                      (insert-file-contents file)
-                                      (bibtex-set-dialect (parsebib-find-bibtex-dialect) t)
-                                      (bibtex-search-entry key nil 0)
-                                      (setq bibtex-entry (bibtex-parse-entry))
-                                      ;; downcase field names so they work in the format-citation code
-                                      (dolist (cons-cell bibtex-entry)
-                                        (setf (car cons-cell) (downcase (car cons-cell))))
-                                      (setq entry-type (downcase (cdr (assoc "=type=" bibtex-entry))))
-
-                                      (setq format (cdr (assoc entry-type fmt)))
-                                      (if format
-                                          (setq entry  (org-ref-reftex-format-citation bibtex-entry format))
-                                        ;; if no format, we use the bibtex entry itself as a fallback
-                                        (save-restriction
-                                          (bibtex-narrow-to-entry)
-                                          (setq entry (buffer-string))))
-                                      (replace-regexp-in-string "\"" "" (htmlize-escape-or-link entry)))))
-                           (author-year (let ((fmt '(("article" . "(%2a, %y)")
-                                                     ("book" . "(%2a, %y)")
-                                                     ("techreport" . "(%2a, %y)")
-                                                     ("proceedings" . "(%2a, %y)")
-                                                     ("inproceedings" . "(%2a, %y)"))))
+                           (author-year (let ((fmt "(%2a, %y)"))
                                           (with-temp-buffer
                                             (insert-file-contents file)
                                             (bibtex-set-dialect (parsebib-find-bibtex-dialect) t)
@@ -200,18 +173,10 @@ Supported backends: 'html, 'latex, 'ascii, 'org, 'md, 'pandoc" type type)
                                             ;; downcase field names so they work in the format-citation code
                                             (dolist (cons-cell bibtex-entry)
                                               (setf (car cons-cell) (downcase (car cons-cell))))
-                                            (setq entry-type (downcase (cdr (assoc "=type=" bibtex-entry))))
-
-                                            (setq format (cdr (assoc entry-type fmt)))
-                                            (if format
-                                                (setq entry  (org-ref-reftex-format-citation bibtex-entry format))
-                                              ;; if no format, we use the bibtex entry itself as a fallback
-                                              (save-restriction
-                                                (bibtex-narrow-to-entry)
-                                                (setq entry (buffer-string))))
+                                            (setq entry  (org-ref-reftex-format-citation bibtex-entry fmt))
                                             entry))))
-                      (format "<a id=\"%s\" href=\"#%s\" title=\"%s\">%s</a>"
-                              (md5 key) key title author-year)
+                      (format "<a id=\"%s\" href=\"#%s\">%s</a>"
+                              (md5 key) key author-year)
                       ))
                   (s-split "," keyword) "<a>, </a>"))
       ;; for  pandoc we generate pandoc citations
