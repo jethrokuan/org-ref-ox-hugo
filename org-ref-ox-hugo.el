@@ -38,7 +38,7 @@
   ;; We create an anchor to the key that we can jump to, and provide a jump back
   ;; link with the md5 of the key.
   (let ((org-ref-formatted-citation-backend "md"))
-    (format "<a class=\"%s\" id=\"%s\"></a>%s [↩](#%s)"
+    (format "<a class=\"%s\" id=\"%s\">%s</a> [↩](#%s)"
             bibtex-entry-class
             key
             (org-ref-format-entry key)
