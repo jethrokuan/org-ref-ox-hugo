@@ -1,3 +1,5 @@
+NOTE: Please consider using [[https://github.com/andras-simonyi/citeproc-org][citeproc-org]] instead of this hacky solution.
+
 * Org-ref-ox-hugo
 
 Some overrides for [[https://github.com/jkitchin/org-ref][org-ref]] to play nice with [[https://github.com/kaushalmodi/ox-hugo][ox-hugo]]. For an example,
