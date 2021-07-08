@@ -22,6 +22,13 @@ citation formats you want for the ~md~ key. Here's mine:
                  ("misc" . "${author} (${year}). *${title}*. Retrieved from [${howpublished}](${howpublished}). ${note}.")
                  (nil . "${author}, *${title}* (${year}).")))
 #+end_src
+
+You can add CSS class to links to both reference links and bibtex entries:
+#+begin_src emacs-lisp
+  (setq reference-link-class "class1")
+  (setq reference-link-class "class2")
+#+end_src
+
 ** Caveats
 
 This breaks pandoc markdown export functionality in org-ref.

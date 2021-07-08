@@ -27,12 +27,19 @@
 
 (require 'org-ref)
 
+(defvar reference-link-class ""
+  "HTML class that will be added to reference links")
+
+(defvar bibtex-entry-class ""
+  "HTML class that will be added to bibtex entries")
+
 (defun org-ref-get-bibtex-entry-md (key)
   "Return a md string for the bibliography entry corresponding to KEY."
   ;; We create an anchor to the key that we can jump to, and provide a jump back
   ;; link with the md5 of the key.
   (let ((org-ref-formatted-citation-backend "md"))
-    (format "<a id=\"%s\"></a>%s [↩](#%s)"
+    (format "<a class=\"%s\" id=\"%s\">%s</a> [↩](#%s)"
+            bibtex-entry-class
             key
             (org-ref-format-entry key)
             (md5 key))))
@@ -103,9 +110,10 @@ Supported backends: 'html, 'latex, 'ascii, 'org, 'md, 'pandoc" type type)
                     ;; this is an html link that has an anchor to jump back to,
                     ;; and links to the entry in the bibliography. Also contains
                     ;; a tooltip.
-                    (format "<sup id=\"%s\"><a href=\"#%s\" title=\"%s\">%s</a></sup>"
+                    (format "<sup id=\"%s\"><a class=\"%s\" href=\"#%s\" title=\"%s\">%s</a></sup>"
                             ;; this makes an anchor to return to
 			                      (md5 key)
+                            reference-link-class
 			                      key
                             ;; awful way to get a simple tooltip... I just need
                             ;; a simple formatted string, but the default has
@@ -117,6 +125,7 @@ Supported backends: 'html, 'latex, 'ascii, 'org, 'md, 'pandoc" type type)
 				                           '(("article" . "%a, %t, %j, v(%n), %p (%y).")
 				                             ("book" . "%a, %t, %u (%y).")
 				                             ("techreport" . "%a, %t, %i, %u (%y).")
+				                             ("phdthesis" . "%a, %t (%y).")
 				                             ("proceedings" . "%e, %t in %S, %u (%y).")
 				                             ("inproceedings" . "%a, %t, %p, in %b, edited by %e, %u (%y)"))))
 			                        (setq file (catch 'result
@@ -150,6 +159,7 @@ Supported backends: 'html, 'latex, 'ascii, 'org, 'md, 'pandoc" type type)
 				                           '(("article" . "(%2a, %y)")
 				                             ("book" . "(%2a, %y)")
 				                             ("techreport" . "(%2a, %y)")
+				                             ("phdthesis" . "(%a, %y)")
 				                             ("proceedings" . "(%2a, %y)")
 				                             ("inproceedings" . "(%2a, %y)")
                                      ("misc" . "(%2a, %y)"))))
