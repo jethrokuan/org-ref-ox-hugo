@@ -32,7 +32,7 @@
   ;; We create an anchor to the key that we can jump to, and provide a jump back
   ;; link with the md5 of the key.
   (let ((org-ref-formatted-citation-backend "md"))
-    (format "<a id=\"%s\"></a>%s [↩](#%s)"
+    (format "<a id=\"%s\">%s</a> [↩](#%s)"
             key
             (org-ref-format-entry key)
             (md5 key))))
